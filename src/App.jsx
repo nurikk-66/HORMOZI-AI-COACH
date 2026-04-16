@@ -1046,7 +1046,7 @@ async function callAI(apiKey, messages, systemPrompt) {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
-      body: JSON.stringify({ model: "meta-llama/llama-3.3-70b-instruct:free", max_tokens: 1024, messages: [{ role: "system", content: systemPrompt }, ...messages] })
+      body: JSON.stringify({ model: "google/gemini-2.0-flash-exp:free", max_tokens: 1024, messages: [{ role: "system", content: systemPrompt }, ...messages] })
     });
     const d = await res.json();
     return d.choices?.[0]?.message?.content || d.error?.message || "Error";
