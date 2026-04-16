@@ -1074,7 +1074,7 @@ async function callAI(apiKey, messages, systemPrompt) {
     const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
-      body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 1024, messages: [{ role: "system", content: systemPrompt }, ...messages] })
+      body: JSON.stringify({ model: "llama-3.1-8b-instant", max_tokens: 1024, messages: [{ role: "system", content: systemPrompt }, ...messages] })
     });
     const d = await res.json();
     return d.choices?.[0]?.message?.content || d.error?.message || "Error";
