@@ -1036,8 +1036,17 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [saved, setSaved] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [provider, setProvider] = useState(() => localStorage.getItem("hac-provider") || "");
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("hac-apikey") || "");
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [showKeySetup, setShowKeySetup] = useState(false);
   const bottomRef = useRef(null);
   const L = LANGS[lang];
+
+  useEffect(() => {
+    if (!apiKey) setShowKeySetup(true);
+    else setShowKeySetup(false);
+  }, [apiKey]);
 
   useEffect(() => {
     setReady(false); setMessages([]);
@@ -1063,12 +1072,42 @@ export default function App() {
     const next = [...messages, { role: "user", content: msg }];
     setMessages(next); setLoading(true);
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1024, system: L.system, messages: next })
-      });
-      const data = await res.json();
-      setMessages([...next, { role: "assistant", content: data.content?.[0]?.text || "Error." }]);
+      let reply = "";
+      if (provider === "anthropic") {
+        const res = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+          body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1024, system: L.system, messages: next })
+        });
+        const data = await res.json();
+        reply = data.content?.[0]?.text || data.error?.message || "Error.";
+      } else if (provider === "openai") {
+        const res = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
+          body: JSON.stringify({ model: "gpt-4o-mini", max_tokens: 1024, messages: [{ role: "system", content: L.system }, ...next] })
+        });
+        const data = await res.json();
+        reply = data.choices?.[0]?.message?.content || data.error?.message || "Error.";
+      } else if (provider === "gemini") {
+        const contents = next.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+        const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ system_instruction: { parts: [{ text: L.system }] }, contents, generationConfig: { maxOutputTokens: 1024 } })
+        });
+        const data = await res.json();
+        reply = data.candidates?.[0]?.content?.parts?.[0]?.text || data.error?.message || "Error.";
+      } else if (provider === "groq") {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
+          body: JSON.stringify({ model: "llama-3.3-70b-versatile", max_tokens: 1024, messages: [{ role: "system", content: L.system }, ...next] })
+        });
+        const data = await res.json();
+        reply = data.choices?.[0]?.message?.content || data.error?.message || "Error.";
+      }
+      setMessages([...next, { role: "assistant", content: reply || "No response." }]);
     } catch { setMessages([...next, { role: "assistant", content: "Connection error." }]); }
     finally { setLoading(false); }
   }
@@ -1077,6 +1116,71 @@ export default function App() {
     try { await window.storage.delete(STORAGE_KEY + lang); } catch {}
     setMessages([]); setConfirmClear(false);
   }
+
+  const PROVIDERS = [
+    { id: "anthropic", name: "Claude (Anthropic)", color: "#C9A84C", placeholder: "sk-ant-api03-...", hint: "console.anthropic.com", models: "claude-sonnet-4" },
+    { id: "openai",    name: "GPT-4 (OpenAI)",    color: "#10a37f", placeholder: "sk-...",           hint: "platform.openai.com",  models: "gpt-4o-mini" },
+    { id: "gemini",    name: "Gemini (Google)",    color: "#4285f4", placeholder: "AIza...",          hint: "aistudio.google.com",  models: "gemini-1.5-flash" },
+    { id: "groq",      name: "Groq (Free/Fast)",   color: "#f55036", placeholder: "gsk_...",          hint: "console.groq.com",     models: "llama-3.3-70b" },
+  ];
+  const [selectedProvider, setSelectedProvider] = useState("anthropic");
+  const P = PROVIDERS.find(p => p.id === selectedProvider);
+
+  function saveApiKey() {
+    const k = apiKeyInput.trim();
+    if (!k) { alert("Please enter your API key"); return; }
+    localStorage.setItem("hac-apikey", k);
+    localStorage.setItem("hac-provider", selectedProvider);
+    setApiKey(k);
+    setProvider(selectedProvider);
+    setApiKeyInput("");
+    setShowKeySetup(false);
+  }
+
+  if (showKeySetup) return (
+    <div style={{ minHeight: "100vh", background: "#080808", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Georgia, serif", padding: 24 }}>
+      <div style={{ maxWidth: 480, width: "100%" }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ width: 56, height: 56, background: "linear-gradient(135deg, #C9A84C, #E8C96D)", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 900, color: "#080808", margin: "0 auto 20px" }}>H</div>
+          <div style={{ color: "#C9A84C", fontSize: 11, letterSpacing: 4, textTransform: "uppercase", marginBottom: 8 }}>Setup</div>
+          <div style={{ color: "#f0f0f0", fontSize: 22, fontWeight: 700, marginBottom: 6 }}>Hormozi AI Coach</div>
+          <div style={{ color: "#444", fontSize: 13 }}>Choose your AI provider & enter API key</div>
+        </div>
+
+        {/* Provider selector */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 20 }}>
+          {PROVIDERS.map(p => (
+            <button key={p.id} onClick={() => setSelectedProvider(p.id)} style={{
+              padding: "12px 14px", borderRadius: 6, cursor: "pointer", fontFamily: "Georgia, serif", textAlign: "left",
+              background: selectedProvider === p.id ? p.color + "15" : "#0d0d0d",
+              border: selectedProvider === p.id ? "1px solid " + p.color + "66" : "1px solid #1e1e1e",
+              transition: "all 0.2s"
+            }}>
+              <div style={{ color: selectedProvider === p.id ? p.color : "#555", fontSize: 13, fontWeight: 700, marginBottom: 3 }}>{p.name}</div>
+              <div style={{ color: "#333", fontSize: 10 }}>{p.models}</div>
+            </button>
+          ))}
+        </div>
+
+        {/* API Key input */}
+        <div style={{ background: "#0d0d0d", border: "1px solid #1e1e1e", borderRadius: 8, padding: 20, marginBottom: 12 }}>
+          <div style={{ color: "#444", fontSize: 11, letterSpacing: 2, textTransform: "uppercase", marginBottom: 10 }}>API Key</div>
+          <input
+            value={apiKeyInput} onChange={e => setApiKeyInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && saveApiKey()}
+            placeholder={P.placeholder}
+            style={{ width: "100%", padding: "11px 14px", background: "#080808", border: "1px solid #222", borderRadius: 6, color: "#ddd", fontSize: 13, outline: "none", fontFamily: "Georgia, serif", boxSizing: "border-box", marginBottom: 10 }}
+          />
+          <div style={{ color: "#2a2a2a", fontSize: 11 }}>Get your key at <span style={{ color: P.color }}>{P.hint}</span></div>
+        </div>
+
+        <button onClick={saveApiKey} style={{ width: "100%", padding: "14px", background: "linear-gradient(135deg, #C9A84C, #E8C96D)", border: "none", borderRadius: 6, color: "#080808", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "Georgia, serif", marginBottom: 12 }}>
+          Start Coaching →
+        </button>
+        <div style={{ color: "#222", fontSize: 11, textAlign: "center" }}>Your key is stored locally in your browser. Never shared.</div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ minHeight: "100vh", background: "#080808", color: "#e0e0e0", fontFamily: "Georgia, serif", display: "flex", flexDirection: "column", alignItems: "center", padding: "0 16px 32px" }}>
@@ -1103,6 +1207,7 @@ export default function App() {
                 <div style={{ width: 5, height: 5, borderRadius: "50%", background: saved ? "#4caf50" : ready ? "#2a2a2a" : "#555" }} />
                 {saved ? L.saved : ready ? L.ready : "..."}
               </div>
+              <button onClick={() => { setApiKey(""); setShowKeySetup(true); }} style={{ padding: "4px 10px", background: "transparent", border: "1px solid #1e1e1e", borderRadius: 4, color: "#333", fontSize: 10, cursor: "pointer", fontFamily: "Georgia, serif" }}>API Key</button>
               {messages.length > 0 && !confirmClear && (
                 <button onClick={() => setConfirmClear(true)} style={{ padding: "4px 10px", background: "transparent", border: "1px solid #1e1e1e", borderRadius: 4, color: "#444", fontSize: 11, cursor: "pointer", fontFamily: "Georgia, serif" }}
                   onMouseEnter={e => { e.target.style.color = "#e74c3c"; e.target.style.borderColor = "#c0392b55"; }}
